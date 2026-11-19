@@ -1,12 +1,5 @@
+
 name: CI
-
-permissions:
-  contents: read
-  security-events: write
-  actions: read
-
-env:
-  SONAR_SCANNER_VERSION: 5.0.1.3006
 
 on:
   push:
@@ -22,6 +15,14 @@ on:
     paths-ignore:
       - "src/test/java/**"
       - "target/**"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+env:
+  SONAR_SCANNER_VERSION: 5.0.1.3006
 
 jobs:
   build:
@@ -40,9 +41,8 @@ jobs:
           key: ${{ runner.os }}-sonar
           restore-keys: |
             ${{ runner.os }}-sonar
-      # -----------------------------
-      # CodeScan Analysis - Push
-      # -----------------------------
+
+      # CodeScan analysis - Push
       - name: Run CodeScan On Push
         if: github.event_name == 'push'
         uses: codescan-io/codescan-scanner-action@3.0
@@ -51,14 +51,10 @@ jobs:
           organization: ai-codefix
           projectKey: git-acts-336
           codeScanUrl: https://staging.codescan.io/
-          login: squ_d96ee9d8d720a119c449b61576b41233fac58de4
-
-          # SARIF generation enabled
+          login: ${{ secrets.CODESCAN_AUTH_TOKEN }}
           generateSarifFile: true
 
-      # -----------------------------
-      # CodeScan Analysis - Pull Request
-      # -----------------------------
+      # CodeScan analysis - Pull Request
       - name: Run CodeScan On PR
         if: github.event_name == 'pull_request'
         uses: codescan-io/codescan-scanner-action@3.0
@@ -67,38 +63,89 @@ jobs:
           organization: ai-codefix
           projectKey: git-acts-336
           codeScanUrl: https://staging.codescan.io/
-          login: squ_d96ee9d8d720a119c449b61576b41233fac58de4
-
-          # SARIF generation enabled
+          login: ${{ secrets.CODESCAN_AUTH_TOKEN }}
           generateSarifFile: true
-
           args: |
             sonar.pullrequest.branch=${{ github.head_ref }}
             sonar.pullrequest.base=${{ github.base_ref }}
             sonar.pullrequest.key=${{ github.event.number }}
-      # -----------------------------
-      # Verify SARIF
-      # -----------------------------
+
+      # Verify SARIF exists
       - name: Verify SARIF file
         run: |
           echo "Checking SARIF file..."
           pwd
-          ls -la
           ls -lh codescan.sarif
-      # -----------------------------
-      # SARIF Upload
-      # -----------------------------
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: codescan.sarif
-          wait-for-processing: true
 
-      # -----------------------------
-      # SARIF Artifact Upload
-      # -----------------------------
+      # Diagnose incorrect SARIF result locations
+      - name: Validate SARIF result locations
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+
+          with open("codescan.sarif", encoding="utf-8") as f:
+              sarif = json.load(f)
+
+          total = 0
+          invalid = 0
+
+          for run_index, run in enumerate(sarif.get("runs", [])):
+              results = run.get("results", [])
+
+              for result_index, result in enumerate(results):
+                  total += 1
+                  locations = result.get("locations") or []
+                  problems = []
+
+                  if not locations:
+                      problems.append("Missing locations array")
+
+                  for loc_index, location in enumerate(locations):
+                      physical = location.get("physicalLocation") or {}
+                      artifact = physical.get("artifactLocation") or {}
+                      uri = artifact.get("uri")
+
+                      if not isinstance(uri, str) or not uri.strip():
+                          problems.append(
+                              f"Location {loc_index}: missing artifact URI"
+                          )
+
+                  if problems:
+                      invalid += 1
+                      rule = result.get("ruleId", "UNKNOWN")
+
+                      print(
+                          f"INVALID: run={run_index} "
+                          f"result={result_index} rule={rule}"
+                      )
+                      for problem in problems:
+                          print("  ", problem)
+
+          print(f"\nTotal results: {total}")
+          print(f"Invalid results: {invalid}")
+
+          if invalid > 0:
+              print("SARIF location validation FAILED")
+              sys.exit(1)
+
+          print("SARIF location validation PASSED")
+          PY
+
+      # Preserve SARIF even if validation fails
       - name: Archive CodeScan SARIF results
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: codescan-sarif
           path: codescan.sarif
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Upload only when location validation passes
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: codescan.sarif
+          category: codescan
+          wait-for-processing: true
