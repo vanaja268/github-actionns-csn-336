@@ -29,12 +29,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Cache files
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.sonar
           key: ${{ runner.os }}-sonar
@@ -45,7 +45,7 @@ jobs:
       # -----------------------------
       - name: Run CodeScan On Push
         if: github.event_name == 'push'
-        uses: codescan-io/codescan-scanner-action@prerelease-3.1
+        uses: codescan-io/codescan-scanner-action@3.0
         with:
           scanChangedFilesOnly: true
           organization: ai-codefix
@@ -61,7 +61,7 @@ jobs:
       # -----------------------------
       - name: Run CodeScan On PR
         if: github.event_name == 'pull_request'
-        uses: codescan-io/codescan-scanner-action@prerelease-3.1
+        uses: codescan-io/codescan-scanner-action@3.0
         with:
           scanChangedFilesOnly: true
           organization: ai-codefix
@@ -98,7 +98,7 @@ jobs:
       # SARIF Artifact Upload
       # -----------------------------
       - name: Archive CodeScan SARIF results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: codescan-sarif
           path: codescan.sarif
