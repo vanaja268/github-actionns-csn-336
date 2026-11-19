@@ -1,0 +1,31 @@
+trigger:
+- master
+
+pool:
+  vmImage: windows-2022
+
+steps:
+- script: |
+    echo "Node: $(node --version)"
+    echo "npm:  $(npm --version)"
+  displayName: 'Print Node version'
+
+- task: CodeScanCloudPrepare@3
+  inputs:
+    CodeScanCloud: 'vanaja-staging'
+    organization: 'ai-codefix'
+    scannerMode: 'CLI'
+    configMode: 'manual'
+    cliProjectKey: 'azure-yaml'
+    cliProjectName: 'azure-yaml'
+    cliSources: '.'
+    extraProperties: |
+      sonar.qualitygate.wait=true
+      sonar.qualitygate.timeout=3600000
+      sonar.token=squ_d96ee9d8d720a119c449b61576b41233fac58de4
+- task: CodeScanCloudAnalyze@3
+  inputs:
+    jdkversion: 'JAVA_HOME_17_X64'
+- task: CodeScanCloudPublish@3
+  inputs:
+    pollingTimeoutSec: '300'
